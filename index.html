@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="de">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+		<meta name="theme-color" content="#0E0719">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+		<meta name="apple-mobile-web-app-title" content="Kikimora">
+		<title>Kikimora</title>
+		<link rel="manifest" href="manifest.json">
+		<link rel="icon" type="image/png" href="icons/icon-192.png">
+		<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+		<style>
+@font-face {
+	font-family: 'Fraunces';
+	src: url('fonts/fraunces-italic-var.woff2') format('woff2');
+	font-style: italic;
+	font-weight: 100 900;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Inter';
+	src: url('fonts/inter-var.woff2') format('woff2');
+	font-weight: 100 900;
+	font-display: swap;
+}
+
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: #F5F0FF;
+	background-color: #0E0719;
+	overflow: hidden;
+	touch-action: none;
+	font-family: 'Inter', system-ui, sans-serif;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+/* ── Ladebildschirm im Kikimora-CI ──────────────────────────────── */
+#status {
+	position: absolute;
+	inset: 0;
+	background-color: #0E0719;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	gap: 18px;
+	visibility: hidden;
+	z-index: 10;
+}
+
+#load-logo {
+	width: min(24vh, 160px);
+	height: auto;
+	filter: drop-shadow(0 8px 30px rgba(138, 43, 226, .5));
+}
+
+#load-wordmark {
+	font-family: 'Fraunces', Georgia, serif;
+	font-style: italic;
+	font-weight: 800;
+	font-size: clamp(34px, 7vh, 52px);
+	line-height: 1;
+	color: #B6FF3C;
+	letter-spacing: -.01em;
+}
+
+#load-bar {
+	width: min(46vw, 320px);
+	height: 8px;
+	border-radius: 999px;
+	background: #241640;
+	overflow: hidden;
+}
+
+#load-fill {
+	width: 0%;
+	height: 100%;
+	border-radius: 999px;
+	background: #B6FF3C;
+	box-shadow: 0 0 12px rgba(182, 255, 60, .7);
+	transition: width .2s ease;
+}
+
+#load-bar.indeterminate #load-fill {
+	width: 35%;
+	animation: slide 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes slide {
+	from { margin-left: 0; }
+	to { margin-left: 65%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#load-bar.indeterminate #load-fill { animation: none; width: 100%; opacity: .5; }
+}
+
+#load-notice {
+	display: none;
+	max-width: 70vw;
+	background-color: #241640;
+	border: 1px solid #E935C1;
+	border-radius: .5rem;
+	color: #F5F0FF;
+	line-height: 1.4;
+	padding: 1rem;
+	text-align: center;
+}
+
+/* ── Querformat-Hinweis (iOS-Fallback, liegt ueber allem — auch beim Laden) ── */
+#rotate-hint {
+	position: fixed;
+	inset: 0;
+	z-index: 20;
+	display: none;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	gap: 22px;
+	background-color: #0E0719;
+	text-align: center;
+	padding: 24px;
+}
+
+#rotate-hint svg {
+	width: 72px;
+	height: 72px;
+	animation: rotate-phone 2.2s ease-in-out infinite;
+}
+
+@keyframes rotate-phone {
+	0%, 20% { transform: rotate(0deg); }
+	55%, 80% { transform: rotate(90deg); }
+	100% { transform: rotate(90deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#rotate-hint svg { animation: none; transform: rotate(90deg); }
+}
+
+#rotate-hint .rh-title {
+	font-family: 'Fraunces', Georgia, serif;
+	font-style: italic;
+	font-weight: 800;
+	font-size: clamp(26px, 7vw, 36px);
+	color: #B6FF3C;
+	line-height: 1.15;
+}
+
+#rotate-hint .rh-sub {
+	font-size: 16px;
+	color: #F5F0FF;
+}
+
+#rotate-hint .rh-lock {
+	font-size: 13px;
+	color: #6B5C8C;
+	max-width: 300px;
+	line-height: 1.4;
+}
+
+@media (orientation: portrait) {
+	#rotate-hint { display: flex; }
+	#canvas { visibility: hidden; }
+}
+		</style>
+		
+	</head>
+	<body>
+		<canvas id="canvas">
+			Dein Browser unterstützt kein Canvas.
+		</canvas>
+
+		<noscript>
+			Kikimora braucht JavaScript.
+		</noscript>
+
+		<div id="status">
+			<img id="load-logo" src="kikolo.png" alt="">
+			<div id="load-wordmark">Kikimora</div>
+			<div id="load-bar" class="indeterminate"><div id="load-fill"></div></div>
+			<div id="load-notice"></div>
+		</div>
+
+		<!-- Unsichtbarer Messpunkt für die Safe-Area: env(safe-area-inset-*) ist
+		     nur via CSS lesbar (braucht viewport-fit=cover im viewport-Meta!),
+		     LayoutManager holt die Werte über window.kikimoraSafeArea ab. -->
+		<div id="sai" style="position:fixed;top:0;left:0;visibility:hidden;
+			pointer-events:none;
+			padding:env(safe-area-inset-top) env(safe-area-inset-right)
+					env(safe-area-inset-bottom) env(safe-area-inset-left)"></div>
+
+		<div id="rotate-hint" aria-hidden="true">
+			<svg viewBox="0 0 24 24" fill="none" stroke="#B6FF3C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="7.5" y="2.5" width="9" height="19" rx="2"/>
+				<line x1="10.5" y1="18.5" x2="13.5" y2="18.5"/>
+			</svg>
+			<div>
+				<div class="rh-title">dreh dein handy</div>
+				<div class="rh-sub">kikimora spielt im querformat</div>
+			</div>
+			<div class="rh-lock">falls sich nichts dreht, schalt die rotationssperre aus</div>
+		</div>
+
+		<script>
+// Safe-Area-Insets für autoloads/layout_manager.gd (JavaScriptBridge).
+// Liefert CSS-Pixel + die zugehörige Referenzgröße (innerWidth/Height),
+// damit GDScript in den Viewport-Pixelraum umrechnen kann.
+window.kikimoraSafeArea = function () {
+	const s = getComputedStyle(document.getElementById('sai'));
+	return JSON.stringify({
+		left:   parseFloat(s.paddingLeft)   || 0,
+		top:    parseFloat(s.paddingTop)    || 0,
+		right:  parseFloat(s.paddingRight)  || 0,
+		bottom: parseFloat(s.paddingBottom) || 0,
+		css_w:  window.innerWidth,
+		css_h:  window.innerHeight
+	});
+};
+
+// Beim Drehen ändern sich die Insets, aber iOS aktualisiert
+// innerWidth/innerHeight erst einen Tick nach orientationchange. Ein
+// nachgeschobenes resize-Event stößt Godots size_changed → LayoutManager
+// _recompute() mit den frischen Werten an.
+window.addEventListener('orientationchange', () => {
+	setTimeout(() => window.dispatchEvent(new Event('resize')), 250);
+});
+		</script>
+
+		<script src="index.js"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":10304360,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const engine = new Engine(GODOT_CONFIG);
+
+// Querformat festnageln, wo der Browser es erlaubt (Android-Chrome in der
+// installierten PWA). iOS Safari wirft hier — erwartet, der CSS-Overlay
+// (#rotate-hint) ist dort der Fallback.
+try {
+	if (screen.orientation && screen.orientation.lock) {
+		screen.orientation.lock('landscape').catch(() => {});
+	}
+} catch (err) { /* nicht unterstützt — Overlay übernimmt */ }
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const loadBar = document.getElementById('load-bar');
+	const loadFill = document.getElementById('load-fill');
+	const statusNotice = document.getElementById('load-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		loadBar.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		text.split('\n').forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('Unbekannter Fehler beim Laden.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		const missingMsg = 'Dein Browser kann Kikimora leider nicht ausführen. Es fehlt:\n';
+		displayFailureNotice(missingMsg + missing.join('\n'));
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (current > 0 && total > 0) {
+					loadBar.classList.remove('indeterminate');
+					loadFill.style.width = ((current / total) * 100).toFixed(1) + '%';
+				} else {
+					loadBar.classList.add('indeterminate');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+
+	// Service Worker erst nach dem Start registrieren, damit er dem ersten
+	// Ladevorgang keine Bandbreite klaut. Cached danach alles für Offline-Start.
+	if ('serviceWorker' in navigator) {
+		window.addEventListener('load', () => {
+			navigator.serviceWorker.register('sw.js').catch((err) => {
+				console.warn('Service-Worker-Registrierung fehlgeschlagen:', err);
+			});
+		});
+	}
+}());
+		</script>
+	</body>
+</html>
+
