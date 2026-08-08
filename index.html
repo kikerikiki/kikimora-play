@@ -178,6 +178,30 @@ body {
 	#rotate-hint { display: flex; }
 	#canvas { visibility: hidden; }
 }
+
+/* ── Godots Virtual-Keyboard-Overlay ────────────────────────────────────
+   Bei aktivem html/experimental_virtual_keyboard legt Godot ein <input>
+   und ein <textarea> direkt vor das Canvas (body-Kinder, volle Canvas-
+   Fläche), damit Mobile-Browser überhaupt eine Tastatur öffnen. Die
+   Elemente dürfen NICHT display:none bekommen (dann keine Tastatur mehr),
+   aber nichts von ihnen darf sichtbar werden: Godot zeichnet Caret und
+   Text selbst — der Browser-Caret des Overlays wäre der „zweite Cursor
+   an falscher Stelle". 16px font-size verhindert Safaris Auto-Zoom beim
+   Fokussieren (zoomt bei Inputs < 16px). */
+body > input, body > textarea {
+	caret-color: transparent !important;
+	color: transparent !important;
+	background: transparent !important;
+	border: 0 !important;
+	outline: none !important;
+	box-shadow: none !important;
+	font-size: 16px !important;
+	resize: none !important;
+}
+body > input::selection, body > textarea::selection {
+	background: transparent !important;
+	color: transparent !important;
+}
 		</style>
 		
 	</head>
@@ -218,9 +242,139 @@ body {
 		</div>
 
 		<script>
+// ── Viewport-Governor ───────────────────────────────────────────────────
+// Die Engine läuft mit canvasResizePolicy=0 (Override unten): sie fasst die
+// Canvas-Größe nie selbst an, sondern übernimmt jede Änderung, die wir hier
+// setzen. Grund: iOS Safari — besonders als installierte Homescreen-App —
+// meldet nach orientationchange teils dauerhaft veraltete oder halbfertige
+// window.innerWidth/innerHeight-Werte. Mit Policy 2 (Engine liest jeden
+// Frame innerWidth) fror das Spiel dann im kaputten Zwischenlayout fest;
+// visualViewport ist auf iOS die verlässliche Quelle.
+//
+// Regeln:
+//  - Hochformat wird NIE angewendet: der #rotate-hint liegt drüber, das
+//    Canvas behält die letzte gültige Landscape-Größe → es gibt kein
+//    kaputtes Zwischenlayout, aus dem zurückgerechnet werden müsste.
+//  - Offene Bildschirmtastatur (Fokus im VK-Overlay) friert die Größe ein —
+//    das Schrumpfen des visualViewport darf das Spiel-Layout nicht stauchen;
+//    die Szenen rücken selbst nach (kikimoraKeyboard unten).
+//  - Committet wird erst, wenn zwei Messungen im Abstand von 120 ms
+//    dieselben Maße liefern (Nachfassen wie bei der Safe-Area-Brücke).
+//  - Entprellung: nach einem Commit ist 1 s gesperrt. Wechsel in der Sperre
+//    werden nur vorgemerkt und EINMAL am Sperr-Ende angewendet — und zwar
+//    der dann tatsächliche Zustand, nie der erste der Sequenz.
+//  - Watchdog (1 s): vergleicht Ist vs. Soll — selbst ein Wechsel ganz ohne
+//    Event kann nicht dauerhaft verschluckt werden.
+const KikimoraViewport = (function () {
+	const canvas = document.getElementById('canvas');
+	const state = { w: 0, h: 0 };          // zuletzt angewendete CSS-Maße
+	let settleTimer = null;
+	let pendingTimer = null;
+	let lockedUntil = 0;
+
+	function measure() {
+		const vv = window.visualViewport;
+		return {
+			w: Math.round(vv ? vv.width : window.innerWidth),
+			h: Math.round(vv ? vv.height : window.innerHeight)
+		};
+	}
+
+	function keyboardOpen() {
+		const ae = document.activeElement;
+		return !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+	}
+
+	function apply(w, h) {
+		if (w <= 0 || h <= 0) {
+			return;
+		}
+		state.w = w;
+		state.h = h;
+		const scale = window.devicePixelRatio || 1;
+		canvas.style.width = w + 'px';
+		canvas.style.height = h + 'px';
+		canvas.width = Math.floor(w * scale);
+		canvas.height = Math.floor(h * scale);
+	}
+
+	function commit(m) {
+		if (m.h > m.w) {
+			return;                        // Hochformat: einfrieren
+		}
+		if (keyboardOpen()) {
+			return;                        // Tastatur offen: einfrieren
+		}
+		if (m.w !== state.w || m.h !== state.h) {
+			apply(m.w, m.h);
+		}
+	}
+
+	// Nachfassen: alle 120 ms messen, bis zwei aufeinanderfolgende Messungen
+	// übereinstimmen (max. ~1,5 s, dann gilt die letzte).
+	function settle() {
+		if (settleTimer) {
+			clearInterval(settleTimer);
+		}
+		let last = null;
+		let tries = 0;
+		settleTimer = setInterval(function () {
+			const m = measure();
+			tries += 1;
+			if ((last && m.w === last.w && m.h === last.h) || tries > 12) {
+				clearInterval(settleTimer);
+				settleTimer = null;
+				commit(m);
+			}
+			last = m;
+		}, 120);
+	}
+
+	function trigger() {
+		const now = Date.now();
+		if (now < lockedUntil) {
+			if (!pendingTimer) {
+				pendingTimer = setTimeout(function () {
+					pendingTimer = null;
+					trigger();
+				}, lockedUntil - now + 20);
+			}
+			return;
+		}
+		lockedUntil = now + 1000;
+		settle();
+	}
+
+	window.addEventListener('orientationchange', trigger);
+	window.addEventListener('resize', trigger);
+	if (window.visualViewport) {
+		window.visualViewport.addEventListener('resize', trigger);
+	}
+	setInterval(function () {
+		const m = measure();
+		if (m.h <= m.w && !keyboardOpen() && !settleTimer
+				&& (m.w !== state.w || m.h !== state.h)) {
+			trigger();
+		}
+	}, 1000);
+
+	// Startgröße: im Hochformat gebootet → Landscape-Maße raten (Achsen
+	// getauscht); die erste echte Landscape-Messung korrigiert via settle().
+	const m0 = measure();
+	if (m0.h > m0.w) {
+		apply(m0.h, m0.w);
+	} else {
+		apply(m0.w, m0.h);
+	}
+
+	return state;
+}());
+
 // Safe-Area-Insets für autoloads/layout_manager.gd (JavaScriptBridge).
-// Liefert CSS-Pixel + die zugehörige Referenzgröße (innerWidth/Height),
-// damit GDScript in den Viewport-Pixelraum umrechnen kann.
+// Liefert CSS-Pixel + die zugehörige Referenzgröße, damit GDScript in den
+// Viewport-Pixelraum umrechnen kann. Referenz ist die vom Governor
+// angewendete Canvas-Größe (nicht innerWidth — die lügt auf iOS nach dem
+// Drehen), damit die Umrechnung immer zum tatsächlichen Canvas passt.
 window.kikimoraSafeArea = function () {
 	const s = getComputedStyle(document.getElementById('sai'));
 	return JSON.stringify({
@@ -228,23 +382,36 @@ window.kikimoraSafeArea = function () {
 		top:    parseFloat(s.paddingTop)    || 0,
 		right:  parseFloat(s.paddingRight)  || 0,
 		bottom: parseFloat(s.paddingBottom) || 0,
-		css_w:  window.innerWidth,
-		css_h:  window.innerHeight
+		css_w:  KikimoraViewport.w || window.innerWidth,
+		css_h:  KikimoraViewport.h || window.innerHeight
 	});
 };
 
-// Beim Drehen ändern sich die Insets, aber iOS aktualisiert
-// innerWidth/innerHeight erst einen Tick nach orientationchange. Ein
-// nachgeschobenes resize-Event stößt Godots size_changed → LayoutManager
-// _recompute() mit den frischen Werten an.
-window.addEventListener('orientationchange', () => {
-	setTimeout(() => window.dispatchEvent(new Event('resize')), 250);
-});
+// Tastaturhöhe in CSS-Pixeln relativ zur (eingefrorenen) Canvas-Höhe.
+// DisplayServer.virtual_keyboard_get_height() liefert im Web-Export IMMER 0
+// (es gibt keine vk_height-Bridge im Engine-JS) — die Szenen holen die Höhe
+// stattdessen über KeyboardHelper.height_vp() von hier. Was unten von der
+// Canvas-Höhe fehlt, verdeckt die Tastatur; offsetTop rausrechnen, weil iOS
+// die Seite beim Fokussieren hochschieben kann.
+window.kikimoraKeyboard = function () {
+	const vv = window.visualViewport;
+	const ae = document.activeElement;
+	const focused = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+	let kb = 0;
+	if (vv && focused) {
+		kb = Math.max(0, Math.round(KikimoraViewport.h - (vv.height + vv.offsetTop)));
+	}
+	return JSON.stringify({ kb: kb, css_h: KikimoraViewport.h });
+};
 		</script>
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":10304088,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":10307220,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+// Canvas-Größe steuert der Viewport-Governor oben — die Engine darf sie
+// nicht selbst aus window.innerWidth/innerHeight ableiten (iOS meldet nach
+// dem Drehen veraltete Werte). Policy 0 = Engine folgt der Canvas-Größe.
+GODOT_CONFIG['canvasResizePolicy'] = 0;
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
