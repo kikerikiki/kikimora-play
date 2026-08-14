@@ -2,7 +2,7 @@
 // Cached Engine + Shell komplett, damit der zweite Start offline und schnell
 // läuft. CACHE_VERSION wird vom Build-Skript (web/build_web.ps1) pro Export
 // gestempelt — neuer Build verdrängt damit den alten Cache.
-const CACHE_VERSION = 'kikimora-20260808-160911';
+const CACHE_VERSION = 'kikimora-20260814-193903';
 
 const CORE = [
   './',
