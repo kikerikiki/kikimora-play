@@ -367,12 +367,8 @@ const KikimoraTurnstile = (function () {
 	let watchdog = null;
 	const queue = [];
 
-	// TEMP-KTS: einheitlicher Log-Prefix, spaeter per Suche "TEMP-KTS" entfernen.
-	function KTS(msg) { try { console.log('[KTS-JS ' + Date.now() + '] ' + msg); } catch (e) {} }
-
 	function finishCurrent(token) {
 		if (watchdog) { clearTimeout(watchdog); watchdog = null; }
-		KTS('finishCurrent token=' + (typeof token === 'string' && token ? 'len' + token.length : 'EMPTY')); // TEMP-KTS
 		const f = current;
 		current = null;
 		busy = false;
@@ -381,44 +377,37 @@ const KikimoraTurnstile = (function () {
 	}
 
 	function pump() {
-		KTS('pump ready=' + ready + ' busy=' + busy + ' queueLen=' + queue.length + ' turnstile=' + (typeof turnstile)); // TEMP-KTS
 		if (!ready || busy || queue.length === 0) {
 			return;
 		}
 		if (typeof turnstile === 'undefined') {
-			KTS('pump: turnstile undefined -> flush queue mit ""'); // TEMP-KTS
 			while (queue.length) { queue.shift()(''); }
 			return;
 		}
 		busy = true;
 		current = queue.shift();
-		watchdog = setTimeout(function () { KTS('WATCHDOG ' + WATCHDOG_MS + 'ms -> finishCurrent("")'); finishCurrent(''); }, WATCHDOG_MS); // TEMP-KTS
+		watchdog = setTimeout(function () { finishCurrent(''); }, WATCHDOG_MS);
 		try {
 			if (widgetId === null) {
-				KTS('turnstile.render (erstmalig)'); // TEMP-KTS
 				widgetId = turnstile.render('#turnstile-slot', {
 					sitekey: KIKIMORA_TURNSTILE_SITEKEY,
 					execution: 'execute',
-					callback: function (token) { KTS('CF callback token=' + (token ? 'len' + token.length : 'EMPTY')); finishCurrent(token); }, // TEMP-KTS
-					'error-callback': function () { KTS('CF error-callback'); finishCurrent(''); return true; }, // TEMP-KTS
-					'unsupported-callback': function () { KTS('CF unsupported-callback'); finishCurrent(''); } // TEMP-KTS
+					callback: function (token) { finishCurrent(token); },
+					'error-callback': function () { finishCurrent(''); return true; },
+					'unsupported-callback': function () { finishCurrent(''); }
 				});
 			} else {
-				KTS('turnstile.reset(widgetId)'); // TEMP-KTS
 				turnstile.reset(widgetId);
 			}
-			KTS('turnstile.execute(#turnstile-slot)'); // TEMP-KTS
 			turnstile.execute('#turnstile-slot');
 		} catch (err) {
 			console.warn('Turnstile execute fehlgeschlagen:', err);
-			KTS('execute throw: ' + err); // TEMP-KTS
 			finishCurrent('');
 		}
 	}
 
 	function markReady() {
 		if (ready) { return; }
-		KTS('markReady -> ready=true'); // TEMP-KTS
 		ready = true;
 		pump();
 	}
@@ -444,17 +433,11 @@ const KikimoraTurnstile = (function () {
 
 	return {
 		onload: markReady,
-		// TEMP-KTS: Browser-Pruefpunkt fuer die Busy-Hypothese. In der Konsole
-		// window.kikimoraTurnstileDebug() aufrufen (vor/nach Spielstart), um
-		// ready/busy/queueLen/widgetId ohne Instrumentierung abzulesen.
-		debug: function () { return { ready: ready, busy: busy, queueLen: queue.length, widgetId: widgetId }; },
 		request: function (done) {
-			KTS('request() betreten busy=' + busy + ' queueLen=' + queue.length + ' ready=' + ready); // TEMP-KTS
 			return new Promise(function (resolve) {
 				queue.push(function (token) {
-					KTS('queued-fn feuert -> done(token) token=' + (token ? 'len' + token.length : 'EMPTY') + ' doneType=' + typeof done); // TEMP-KTS
-					try { if (typeof done === 'function') { done(token); } KTS('done(token) zurueck (kein throw)'); } // TEMP-KTS
-					catch (err) { console.warn('Turnstile-Callback warf:', err); KTS('done(token) THROW: ' + err); } // TEMP-KTS
+					try { if (typeof done === 'function') { done(token); } }
+					catch (err) { console.warn('Turnstile-Callback warf:', err); }
 					resolve(token);
 				});
 				pump();
@@ -465,13 +448,12 @@ const KikimoraTurnstile = (function () {
 
 window.kikimoraTurnstileOnload = KikimoraTurnstile.onload;
 window.kikimoraTurnstile = KikimoraTurnstile.request;
-window.kikimoraTurnstileDebug = KikimoraTurnstile.debug; // TEMP-KTS
 		</script>
 		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=kikimoraTurnstileOnload&render=explicit" async defer></script>
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":10314516,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":10312388,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 
 GODOT_CONFIG['canvasResizePolicy'] = 0;
 const GODOT_THREADS_ENABLED = false;
